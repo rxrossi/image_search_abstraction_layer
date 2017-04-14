@@ -1,5 +1,7 @@
 import express from 'express';
-import request from 'superagent';
+import request from 'superagent-es6-promise';
+import Query from './models/Queries';
+import database from './database';
 
 const app = express();
 
@@ -8,21 +10,9 @@ function queryGoogle(query, offset = 0) {
 	const cx = "002877656417845337769:joqv9wcm3la";
 
 	const startIndex = (isNaN(offset) ? 1 : (+offset+1));
-	const urlToQuery = `https://www.googleapis.com/customsearch/v1?key=${APIKey}&cx=${cx}&start=${startIndex}&searchType=image&q=${query}`;
-
-	return request
+	const urlToQuery = `https://www.googleapis.com/customsearch/v1?key=${APIKey}&cx=${cx}&start=${startIndex}&searchType=image&q=${query}`; return request
 		.get(urlToQuery)
-}
-
-app.get('/search/:query', (req, res) => {
-	queryGoogle(req.params.query, req.query.offset)
-		.end((err, response) =>{
-
-			if (err) {
-				console.error("Could not get from Google", err);
-				res.send('Could not fetch results from Google, their API response was: \n' + err + '\n' + response.text)
-				return;
-			}
+		.then(response =>{
 
 			const items =	JSON.parse(response.text).items;
 
@@ -35,10 +25,35 @@ app.get('/search/:query', (req, res) => {
 					height: item.image.height,
 				}));
 
-			res.send(
-				itemsLessFields
-			);
-		});
-});
+			return itemsLessFields
+		})
+		.catch(err => console.error(err))
+}
 
-export default app;
+const configureExpress = () => {
+
+	app.get('/search/:query', (req, res) => {
+		queryGoogle(req.params.query, req.query.offset)
+			.then(resp => {
+				res.send(resp)
+			})
+			.catch(err => res.send(err))
+
+		Query.create({
+			query: req.params.query,
+		});
+	});
+
+	app.get('/recent', (req, res) => {
+			Query
+				.find()
+				.limit(10)
+				.sort({_id: -1})
+			.then(result => res.send(result))
+			.catch(err => res.send(err))
+	})
+
+	return app;
+};
+
+export default () => database.connect().then(configureExpress);
